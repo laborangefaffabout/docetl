@@ -73,6 +73,20 @@ def is_snowflake(model: str) -> bool:
     return "snowflake" in model
 
 
+
+def _declares_string(schema: dict[str, Any] | None, key: str) -> bool:
+    """True when the output schema declares ``key`` a string field.
+
+    Structured output decodes JSON-looking string values into objects as
+    a convenience, but a field declared ``str`` must stay a string:
+    decoding it makes the value fail ``validate_output_types`` against
+    its own schema, so every response is rejected (seen with Claude 5.5,
+    which only supports structured output, emitting JSON in a str field).
+    """
+    if not schema:
+        return False
+    return str(schema.get(key, "")).strip().lower() in {"str", "text", "string", "varchar"}
+
 class APIWrapper(object):
     def __init__(self, runner):
         self.runner = runner
@@ -1295,7 +1309,7 @@ Your main result must be sent via send_output. The updated_scratchpad is only fo
 
                 # Attempt to parse any top-level values that are JSON-encoded strings
                 for k, v in parsed_output.items():
-                    if isinstance(v, str):
+                    if isinstance(v, str) and not _declares_string(schema, k):
                         try:
                             if v.strip().startswith("{") or v.strip().startswith("["):
                                 parsed_output[k] = json.loads(v)
@@ -1327,7 +1341,7 @@ Your main result must be sent via send_output. The updated_scratchpad is only fo
 
             # Attempt to parse any top-level values that are JSON-encoded strings
             for k, v in parsed_output.items():
-                if isinstance(v, str):
+                if isinstance(v, str) and not _declares_string(schema, k):
                     try:
                         if v.strip().startswith("{") or v.strip().startswith("["):
                             parsed_output[k] = json.loads(v)
